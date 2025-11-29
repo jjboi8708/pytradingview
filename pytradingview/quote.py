@@ -173,6 +173,7 @@ class QuoteSession:
         if options is None:
             options = {}
 
+
         self.__client['sessions'][self.__session_id] = {'type':'quote', 'onData':self.on_data_q}
 
         fields = (options.get('customFields') if options.get('customFields') and
@@ -182,14 +183,28 @@ class QuoteSession:
         )
 
         self.__client['send']('quote_create_session', [self.__session_id])
-        self.__client['send']('quote_set_fields', [self.__session_id]+[fields])
+        self.__client['send']('quote_set_fields', [self.__session_id] + fields)
 
         quote_session = {
             'sessionID': self.__session_id,
             'symbolListeners': self.__symbol_listeners,
-            # 'send': lambda t, p: self.__client['send'](t, p),
             'send': self.__client['send'],
         }
+
+
+    def add_symbol(self, symbol, callback):
+        """
+        Adds a symbol to the quote session and registers a callback for updates.
+
+        Args:
+            symbol (str): The symbol to subscribe to (e.g., "BINANCE:BTCUSD").
+            callback (callable): The function to call when data is received.
+        """
+        if symbol not in self.__symbol_listeners:
+            self.__symbol_listeners[symbol] = []
+            self.__client['send']('quote_add_symbols', [self.__session_id, symbol])
+        
+        self.__symbol_listeners[symbol].append(callback)
 
     def delete(self):
         """
