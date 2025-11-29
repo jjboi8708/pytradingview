@@ -40,6 +40,8 @@ quote_session = QuoteSession(client_bridge)
 quote_session.set_up_quote({'fields': 'price'})
 """
 
+import asyncio
+import inspect
 from .utils import genSessionID
 
 
@@ -89,7 +91,7 @@ class QuoteSession:
         self.__client = client_bridge
         self.__symbol_listeners = {}
 
-    def on_data_q(self, packet):
+    async def on_data_q(self, packet):
         """
         Handles incoming quote data packets and dispatches them to registered symbol listeners.
 
@@ -122,7 +124,10 @@ class QuoteSession:
                 return
 
             for h in self.__symbol_listeners[symbol]:
-                h(packet)
+                if inspect.iscoroutinefunction(h):
+                    await h(packet)
+                else:
+                    h(packet)
 
         if packet['type'] == 'qsd':
             symbol = packet['data'][1]['n']
@@ -131,7 +136,10 @@ class QuoteSession:
                 return
 
             for h in self.__symbol_listeners[symbol]:
-                h(packet)
+                if inspect.iscoroutinefunction(h):
+                    await h(packet)
+                else:
+                    h(packet)
 
     def set_up_quote(self, options: dict = None):
         """

@@ -1,5 +1,7 @@
+import asyncio
 import csv
 import datetime
+import inspect
 import json
 import os
 import requests
@@ -101,19 +103,25 @@ class ChartSession:
         'error': [],
     }
 
-    def handleEvent(self,event, *args):
+    async def handleEvent(self,event, *args):
         for fun in self.callbacks[event]:
-            fun(args)
+            if inspect.iscoroutinefunction(fun):
+                await fun(args)
+            else:
+                fun(args)
         for fun in self.callbacks['event']:
-            fun(event, args)
+            if inspect.iscoroutinefunction(fun):
+                await fun(event, args)
+            else:
+                fun(event, args)
 
-    def handleError(self,*args):
+    async def handleError(self,*args):
         if len(self.callbacks['error']) == 0:
             print('\033[31m ERROR:\033[0m', args)
         else:
-            self.handleEvent('error', args)
+            await self.handleEvent('error', args)
     
-    def on_data_c(self, packet):
+    async def on_data_c(self, packet):
         if isinstance(packet['data'][1], str) and self.study_listeners.get(packet['data'][1]):
             self.study_listeners[packet['data'][1]](packet)
             return
@@ -124,7 +132,7 @@ class ChartSession:
             **packet['data'][2]
           }
 
-            self.handleEvent('symbolLoaded')
+            await self.handleEvent('symbolLoaded')
             return
 
         if packet['type'] == 'timescale_update': # historical data loaded
@@ -144,7 +152,7 @@ class ChartSession:
                     'volume': round(p['v'][5] * 100) / 100 if len(p['v']) > 5 else None,
                 }
                 candles.append(c)
-            self.handleEvent('seriesLoaded', candles)
+            await self.handleEvent('seriesLoaded', candles)
 
         if packet['type'] == 'du': # current candle update
             changes = []
@@ -182,23 +190,23 @@ class ChartSession:
                     continue
                 if (self.study_listeners[k]): self.study_listeners[k](packet)
 
-            self.handleEvent('update', changes)
+            await self.handleEvent('update', changes)
             return
 
         ## Error handling
         if packet['type'] == 'symbol_error':
-            self.handleError(f"({packet['data'][1]}) Symbol error:", packet['data'][2])
+            await self.handleError(f"({packet['data'][1]}) Symbol error:", packet['data'][2])
             return
 
         if packet['type'] == 'series_error':
-            self.handleError('Series error:', packet['data'][3])
+            await self.handleError('Series error:', packet['data'][3])
             return
 
         if packet['type'] == 'critical_error':
             _, name, description = packet['data']
-            self.handleError('Critical error:', name, description)
+            await self.handleError('Critical error:', name, description)
 
-    def on_data_r(self, packet):
+    async def on_data_r(self, packet):
         if (packet['type'] == 'replay_ok'):
           if (self.__replaya_OKCB[packet['data'][1]]):
             self.__replaya_OKCB[packet['data'][1]]()
@@ -206,24 +214,24 @@ class ChartSession:
           return
 
         if (packet['type'] == 'replay_instance_id'):
-          self.handleEvent('replayLoaded', packet['data'][1])
+          await self.handleEvent('replayLoaded', packet['data'][1])
           return
 
         if (packet['type'] == 'replay_point'):
-          self.handleEvent('replayPoint', packet['data'][1])
+          await self.handleEvent('replayPoint', packet['data'][1])
           return
 
         if (packet['type'] == 'replay_resolutions'):
-          self.handleEvent('replayResolution', packet['data'][1], packet['data'][2])
+          await self.handleEvent('replayResolution', packet['data'][1], packet['data'][2])
           return
 
         if (packet['type'] == 'replay_data_end'):
-          self.handleEvent('replayEnd')
+          await self.handleEvent('replayEnd')
           return
 
         if (packet['type'] == 'critical_error'):
             _, name, description = packet['data']
-            self.handleError('Critical error:', name, description)
+            await self.handleError('Critical error:', name, description)
 
     def set_up_chart(self):
         self.__client['sessions'][self.__chart_session_id] = {'type':'chart', 'onData': self.on_data_c}
