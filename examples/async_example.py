@@ -16,6 +16,14 @@ Features:
 import asyncio
 from pytradingview import AsyncTVclient
 
+# Optional: Use uvloop for ultra-low latency
+try:
+    import uvloop
+    uvloop.install()
+    print("🚀 uvloop enabled for ultra-low latency")
+except ImportError:
+    print("ℹ️ uvloop not found, using default asyncio loop")
+
 
 async def main():
     """Main async function demonstrating AsyncTVclient usage."""

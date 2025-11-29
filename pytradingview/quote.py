@@ -125,7 +125,7 @@ class QuoteSession:
 
             for h in self.__symbol_listeners[symbol]:
                 if inspect.iscoroutinefunction(h):
-                    await h(packet)
+                    asyncio.create_task(h(packet))
                 else:
                     h(packet)
 
@@ -137,7 +137,7 @@ class QuoteSession:
 
             for h in self.__symbol_listeners[symbol]:
                 if inspect.iscoroutinefunction(h):
-                    await h(packet)
+                    asyncio.create_task(h(packet))
                 else:
                     h(packet)
 

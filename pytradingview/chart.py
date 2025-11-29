@@ -106,12 +106,12 @@ class ChartSession:
     async def handleEvent(self,event, *args):
         for fun in self.callbacks[event]:
             if inspect.iscoroutinefunction(fun):
-                await fun(args)
+                asyncio.create_task(fun(args))
             else:
                 fun(args)
         for fun in self.callbacks['event']:
             if inspect.iscoroutinefunction(fun):
-                await fun(event, args)
+                asyncio.create_task(fun(event, args))
             else:
                 fun(event, args)
 

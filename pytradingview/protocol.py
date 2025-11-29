@@ -23,6 +23,12 @@ import json
 import zlib
 import base64
 
+try:
+    import orjson
+    json_loads = orjson.loads
+except ImportError:
+    json_loads = json.loads
+
 
 CLEANER_RGX = '~h~'
 SPLITTER_RGX = '~m~[0-9]{1,}~m~'
@@ -30,34 +36,52 @@ SPLITTER_RGX = '~m~[0-9]{1,}~m~'
 def parse_ws_packet(string):
     """
     Parses a WebSocket packet string into a list of JSON objects.
-
-    This function takes a string input, cleans it using a regular expression,
-    splits it into parts based on another regular expression, and attempts to
-    parse each part as a JSON object. Successfully parsed JSON objects are
-    appended to a list, which is then returned. If a part cannot be parsed,
-    a warning message is printed to the console.
-
-    Args:
-        string (str): The WebSocket packet string to be parsed.
-
-    Returns:
-        list: A list of JSON objects parsed from the input string.
-
-    Notes:
-        - The function uses `cleanerRgx` to clean the input string.
-        - The function uses `splitterRgx` to split the cleaned string into parts.
-        - If a part cannot be parsed as JSON, it is skipped, and a warning is printed.
+    
+    Optimized implementation using manual string scanning and optional orjson support.
     """
-    l = re.split(SPLITTER_RGX, re.sub(CLEANER_RGX, '', string))
-    packet = []
-    for p in l:
-        if not p:
-            continue
+    # Remove heartbeat if present (fast check)
+    if '~h~' in string:
+        string = string.replace('~h~', '')
+        
+    packets = []
+    idx = 0
+    length = len(string)
+    
+    while idx < length:
+        # Expecting ~m~<len>~m~
+        if not string.startswith('~m~', idx):
+            break
+            
+        # Skip first ~m~
+        idx += 3
+        
+        # Find next ~m~
+        next_m = string.find('~m~', idx)
+        if next_m == -1:
+            break
+            
+        # Extract length
         try:
-            packet.append(json.loads(p))
-        except json.JSONDecodeError:
-            pass
-    return packet
+            packet_len = int(string[idx:next_m])
+        except ValueError:
+            break
+            
+        # Move past second ~m~
+        idx = next_m + 3
+        
+        # Extract packet data
+        data_end = idx + packet_len
+        data = string[idx:data_end]
+        
+        if data:
+            try:
+                packets.append(json_loads(data))
+            except Exception:
+                pass
+                
+        idx = data_end
+        
+    return packets
 
 def format_ws_packet(packet):
     """
@@ -75,7 +99,12 @@ def format_ws_packet(packet):
         str: The formatted WebSocket packet as a string.
     """
     if isinstance(packet, dict):
-        packet = json.dumps(packet, separators=(',', ':')).replace('null', '""')
+        if 'orjson' in globals():
+            # orjson.dumps returns bytes, decode to str
+            # orjson doesn't support separators arg but is default compact
+            packet = orjson.dumps(packet).decode('utf-8').replace('null', '""')
+        else:
+            packet = json.dumps(packet, separators=(',', ':')).replace('null', '""')
     return f'~m~{len(packet)}~m~{packet}'
 
 def parse_compressed(data):

@@ -83,7 +83,7 @@ class AsyncClient():
     async def handle_event(self, event, *args):
         """
         Triggers all callbacks registered to a specific event.
-        Automatically detects and awaits async callbacks.
+        Spawns tasks for async callbacks to ensure non-blocking execution.
 
         Args:
             event (str): The name of the event.
@@ -91,12 +91,12 @@ class AsyncClient():
         """
         for fun in self.callbacks[event]:
             if inspect.iscoroutinefunction(fun):
-                await fun(args)
+                asyncio.create_task(fun(args))
             else:
                 fun(args)
         for fun in self.callbacks['event']:
             if inspect.iscoroutinefunction(fun):
-                await fun(event, args)
+                asyncio.create_task(fun(event, args))
             else:
                 fun(event, args)
 
@@ -188,21 +188,20 @@ class AsyncClient():
                     await asyncio.sleep(0.01)  # Small delay to avoid busy-waiting
                     continue
                 
-                # Get packet from queue with timeout
-                try:
-                    packet = await asyncio.wait_for(
-                        self.__send_queue.get(), 
-                        timeout=0.1
-                    )
-                    if self.websocket and self.__is_opened:
-                        await self.websocket.send(packet)
-                except asyncio.TimeoutError:
-                    # No message in queue, continue
-                    continue
+                # Get packet from queue
+                packet = await self.__send_queue.get()
+                
+                if packet is None: # Sentinel to stop
+                    break
+                    
+                if self.websocket and self.__is_opened:
+                    await self.websocket.send(packet)
+                    
             except Exception as e:
                 # Don't crash the send loop on errors
-                await self.handle_error('Send queue error:', e)
-                await asyncio.sleep(0.01)
+                # Use print instead of handle_error to avoid recursion loops if error handler fails
+                print(f"Send queue error: {e}")
+                await asyncio.sleep(0.1)
 
     async def parse_packet(self, string):
         """
@@ -281,11 +280,12 @@ class AsyncClient():
         self.__running = True
         
         try:
+            # Disable default ping/pong as TradingView uses its own heartbeat mechanism
             async with websockets.connect(
                 "wss://data.tradingview.com/socket.io/websocket",
                 origin='https://s.tradingview.com',
-                ping_interval=20,
-                ping_timeout=20
+                ping_interval=None, 
+                ping_timeout=None
             ) as websocket:
                 self.websocket = websocket
                 self.__is_opened = True
@@ -307,7 +307,11 @@ class AsyncClient():
             
             # Cancel background tasks
             if self.__send_task and not self.__send_task.done():
-                self.__send_task.cancel()
+                self.__send_queue.put_nowait(None) # Sentinel
+                try:
+                    await self.__send_task
+                except asyncio.CancelledError:
+                    pass
             
             await self.handle_event('disconnected')
 

@@ -128,6 +128,9 @@ async def test_async_callbacks():
     # Manually trigger event
     await test_client.handle_event('connected', 'test')
     
+    # Allow background tasks to run
+    await asyncio.sleep(0.01)
+    
     assert sync_called, "Sync callback should have been called"
     assert async_called, "Async callback should have been called"
     
